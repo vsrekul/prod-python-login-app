@@ -1,0 +1,64 @@
+image: python:3.9-slim
+
+variables:
+  DOCKER_USER: "vsrekul"
+  DOCKER_PASSWORD: "1254hjkiij"
+  DOCKER_REGISTRY_URL: "https://hub.docker.com"
+  MY_IMAGE: "webapp"
+
+stages:
+  - test
+  - scan
+  - build
+  - trivy
+  - push_image
+
+test_stage:
+  stage: test
+  before_script:
+    - pip install pytest
+  script:
+    - pytest mytest.py > pytest.html
+  allow_failure: true
+  artifacts:
+    paths:
+      - pytest.html
+
+sca_scan: 
+  stage: scan
+  before_script:
+    - pip install safety
+  script:
+    - safety check --full-report > sca_report.txt
+  artifact:
+    paths:
+      - sca_report.txt
+
+build_image: 
+  image: docker
+  service: docker:dind
+  stage: scan
+  before_script:
+    - docker login -u $DOCKER_USER -p $DOCKER_PASSWORD -url $DOCKER_REGISTRY_URL
+  script:
+    - docker build -t $DOCKER_USER/$MY_IMAGE .
+
+trivy_scan: 
+  image: aquasec/trivy:latest
+  stage: trivy
+  before_script:
+    - pip install safety
+  script:
+    - trivy --quiet image --serverity HIGH,CRITICAL" --output trivy.txt $$DOCKER_REGISTRY_URL/$DOCKER_USER/
+  artifact:
+    paths:
+      - trivy.txt
+
+push_image: 
+  image: docker
+  service: docker:dind
+  stage: push_image
+  before_script:
+    - docker login -u $DOCKER_USER -p $DOCKER_PASSWORD -url $DOCKER_REGISTRY_URL
+  script:
+    - docker push $DOCKER_USER/$MY_IMAGE
